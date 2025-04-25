@@ -1,0 +1,83 @@
+import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const image_url = searchParams.get('image_url');
+
+    if (!image_url || !image_url.startsWith('https://')) {
+      return NextResponse.json(
+        { error: 'Valid image_url is required' },
+        { status: 400 }
+      );
+    }
+
+    // 현재 카운트 조회
+    const { data: currentData, error: fetchError } = await supabase
+      .from('image_access_logs')
+      .select('access_count')
+      .eq('image_url', image_url)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116: 결과 없음 오류
+      console.error('Fetch error:', fetchError);
+      return NextResponse.json(
+        { error: 'Failed to fetch count' },
+        { status: 500 }
+      );
+    }
+
+    // 기존 카운트 또는 기본값 0
+    const currentCount = currentData?.access_count || 0;
+    
+    // 데이터베이스 업데이트 (access_count 증가)
+    const { error: dbError } = await supabase
+      .from('image_access_logs')
+      .upsert(
+        {
+          image_url,
+          access_count: currentCount + 1,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'image_url' }
+      );
+
+    if (dbError) {
+      console.error('Database error:', dbError);
+      return NextResponse.json(
+        { error: 'Failed to update count' },
+        { status: 500 }
+      );
+    }
+
+    // 이미지 가져오기
+    const imageResponse = await fetch(image_url);
+    if (!imageResponse.ok) {
+      return NextResponse.json(
+        { error: 'Failed to fetch image' },
+        { status: 500 }
+      );
+    }
+
+    // 이미지 데이터 가져오기
+    const imageData = await imageResponse.arrayBuffer();
+    const contentType = imageResponse.headers.get('Content-Type') || 'image/jpeg';
+
+    // 이미지 응답 반환
+    return new NextResponse(imageData, {
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+} 
