@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { serviceSupabase } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // 현재 카운트 조회
-    const { data: currentData, error: fetchError } = await supabase
+    // 현재 카운트 조회 - 서비스 롤 사용하여 RLS 우회
+    const { data: currentData, error: fetchError } = await serviceSupabase
       .from('image_access_logs')
       .select('access_count')
       .eq('image_url', image_url)
@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
     // 기존 카운트 또는 기본값 0
     const currentCount = currentData?.access_count || 0;
     
-    // 데이터베이스 업데이트 (access_count 증가)
-    const { error: dbError } = await supabase
+    // 데이터베이스 업데이트 (access_count 증가) - 서비스 롤 사용하여 RLS 우회
+    const { error: dbError } = await serviceSupabase
       .from('image_access_logs')
       .upsert(
         {
