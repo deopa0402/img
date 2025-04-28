@@ -61,7 +61,7 @@ export default function Home() {
   };
 
   return (
-    <div className="grid items-center justify-items-center min-h-screen p-8 pb-20 sm:p-20 font-[family-name:var(--font-geist-sans)]">
+    <div className="grid items-center justify-items-center min-h-screen p-8 pb-20 sm:p-20 font-[family-name:var(--font-geist-sans)] bg-white text-black">
       <div className="flex flex-col items-center gap-6 w-full max-w-md">
         <div className="flex justify-between items-center w-full">
           <h1 className="text-3xl font-bold text-center">이미지 업로드</h1>

@@ -161,7 +161,7 @@ export default function StatsPage() {
   };
 
   return (
-    <div className="min-h-screen p-8 sm:p-10">
+    <div className="min-h-screen p-8 sm:p-10 bg-white text-black">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold">이미지 접근 통계</h1>
