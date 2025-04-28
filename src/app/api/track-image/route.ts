@@ -13,6 +13,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // 요청 정보 수집
+    const ip = request.headers.get('x-forwarded-for') || 'unknown';
+    const userAgent = request.headers.get('user-agent') || 'unknown';
+    const referrer = request.headers.get('referer') || 'direct';
+    const timestamp = new Date().toISOString();
+
     // 현재 카운트 조회 - 서비스 롤 사용하여 RLS 우회
     const { data: currentData, error: fetchError } = await serviceSupabase
       .from('image_access_logs')
@@ -38,7 +44,7 @@ export async function GET(request: NextRequest) {
         {
           image_url,
           access_count: currentCount + 1,
-          updated_at: new Date().toISOString(),
+          updated_at: timestamp,
         },
         { onConflict: 'image_url' }
       );
@@ -49,6 +55,27 @@ export async function GET(request: NextRequest) {
         { error: 'Failed to update count' },
         { status: 500 }
       );
+    }
+
+    // 상세 접근 기록 저장
+    try {
+      const { error: historyError } = await serviceSupabase
+        .from('image_access_history')
+        .insert({
+          image_url,
+          ip_address: ip,
+          user_agent: userAgent,
+          referrer: referrer,
+          accessed_at: timestamp
+        });
+
+      if (historyError) {
+        console.error('Access history error:', historyError);
+        // 접근 기록 저장 실패해도 이미지 제공은 계속 진행
+      }
+    } catch (historyError) {
+      console.error('Error recording access history:', historyError);
+      // 접근 기록 저장 실패해도 이미지 제공은 계속 진행
     }
 
     // 이미지 가져오기
