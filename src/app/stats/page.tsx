@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from 'sonner';
-import { Copy, ExternalLink, BarChart2, Calendar, Users, Clock } from 'lucide-react';
+import { Copy, ExternalLink, BarChart2, Calendar, Users, Clock, RefreshCw } from 'lucide-react';
 
 export default function StatsPage() {
   const [stats, setStats] = useState<ImageStats[]>([]);
@@ -172,16 +172,47 @@ export default function StatsPage() {
     }
   };
 
-  // 리퍼러 간소화
-  const simplifyReferrer = (referrer: string) => {
-    if (referrer === 'direct') return '직접 접속';
+  // 리퍼러 간소화 및 URL 파싱
+  const parseReferrer = (referrer: string) => {
+    if (referrer === 'direct') return { hostname: '직접 접속', fullUrl: '' };
     try {
       const url = new URL(referrer);
-      return url.hostname;
+      // & 이전까지만 사용
+      const baseUrl = referrer.split('&')[0];
+      return {
+        hostname: url.hostname,
+        baseUrl: baseUrl
+      };
     } catch {
-      return referrer;
+      return { hostname: referrer, baseUrl: referrer };
     }
   };
+
+  // 상위 참조 사이트 필터링 및 그룹화
+  const groupedReferrers = detailedStats?.topReferrers
+    .filter(item => item.referrer !== 'direct')
+    .reduce((acc, item) => {
+      const { hostname, baseUrl } = parseReferrer(item.referrer);
+      if (!acc[baseUrl]) {
+        acc[baseUrl] = {
+          hostname,
+          count: 0,
+          urls: new Set<string>()
+        };
+      }
+      acc[baseUrl].count += item.count;
+      acc[baseUrl].urls.add(item.referrer);
+      return acc;
+    }, {} as Record<string, { hostname: string; count: number; urls: Set<string> }>) || {};
+
+  const sortedReferrers = Object.entries(groupedReferrers)
+    .map(([baseUrl, data]) => ({
+      hostname: data.hostname,
+      baseUrl,
+      count: data.count,
+      urls: Array.from(data.urls)
+    }))
+    .sort((a, b) => b.count - a.count);
 
   // 날짜별 접근 통계 관련 함수
   const formatDateLabel = (dateString: string) => {
@@ -320,10 +351,31 @@ export default function StatsPage() {
         <Dialog open={!!selectedImageUrl} onOpenChange={(open) => !open && setSelectedImageUrl(null)}>
           <DialogContent className="p-8">
             <DialogHeader className="pb-8 border-b">
-              <DialogTitle className="flex items-center gap-3 text-3xl">
-                <BarChart2 className="h-8 w-8" />
-                상세 통계: {selectedImageUrl ? getImageName(selectedImageUrl) : ''}
-              </DialogTitle>
+              <div className="flex items-center justify-between">
+                <DialogTitle className="flex items-center gap-3 text-3xl">
+                  <BarChart2 className="h-8 w-8" />
+                  상세 통계: {selectedImageUrl ? getImageName(selectedImageUrl).slice(0, 8) : ''}
+                </DialogTitle>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    if (selectedImageUrl) {
+                      setLoadingDetails(true);
+                      getImageDetailedStats(selectedImageUrl)
+                        .then(result => {
+                          if (result.data) {
+                            setDetailedStats(result.data);
+                          }
+                        })
+                        .finally(() => setLoadingDetails(false));
+                    }
+                  }}
+                  className="h-8 w-8"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                </Button>
+              </div>
             </DialogHeader>
 
             {loadingDetails ? (
@@ -355,7 +407,7 @@ export default function StatsPage() {
                     <CardContent className="p-8">
                       <div className="flex items-center gap-4 mb-6">
                         <Calendar className="h-6 w-6 text-gray-500" />
-                        <h3 className="text-lg font-medium text-gray-500">날짜별 접근</h3>
+                        <h3 className="text-lg font-medium text-gray-500">전체 접근</h3>
                       </div>
                       <p className="text-4xl font-bold">
                         {detailedStats.dailyAccess.reduce((sum, item) => sum + item.count, 0)}회
@@ -412,7 +464,7 @@ export default function StatsPage() {
                       <CardTitle className="text-xl">상위 참조 사이트</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="max-h-[500px] overflow-y-auto">
+                      <div className="max-h-[400px] overflow-y-auto pr-2">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -421,9 +473,21 @@ export default function StatsPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {detailedStats.topReferrers.map((item, index) => (
+                            {sortedReferrers.map((item, index) => (
                               <TableRow key={index}>
-                                <TableCell className="text-lg">{simplifyReferrer(item.referrer)}</TableCell>
+                                <TableCell>
+                                  <div className="space-y-1">
+                                    <div className="text-lg font-medium">{item.hostname}</div>
+                                    <div className="text-sm text-gray-500">
+                                      <div className="truncate">{item.baseUrl}</div>
+                                      {item.urls.length > 1 && (
+                                        <div className="text-xs text-gray-400 mt-1">
+                                          외 {item.urls.length - 1}개의 유사 URL
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </TableCell>
                                 <TableCell className="text-right">
                                   <Badge variant="secondary" className="text-lg px-4 py-2">
                                     {item.count}회

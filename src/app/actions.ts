@@ -67,10 +67,10 @@ export async function createShortUrlAction(imageUrl: string) {
 
 // 파일 유효성 검사
 function validateFile(file: File): string | null {
-  // 파일 크기 제한 (5MB)
-  const MAX_FILE_SIZE = 5 * 1024 * 1024
+  // 파일 크기 제한 (10MB)
+  const MAX_FILE_SIZE = 10 * 1024 * 1024
   if (file.size > MAX_FILE_SIZE) {
-    return '파일 크기는 5MB를 초과할 수 없습니다.'
+    return '파일 크기는 10MB를 초과할 수 없습니다.'
   }
 
   return null
