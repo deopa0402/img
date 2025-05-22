@@ -281,24 +281,6 @@ export default function Home() {
             </CardHeader>
             
             <CardContent className="pt-4 space-y-4">
-              {/* <div className="aspect-video bg-muted/30 flex items-center justify-center rounded-lg overflow-hidden border">
-                {uploading ? (
-                  <Skeleton className="h-full w-full" />
-                ) : (
-              <img 
-                src={getTrackingUrl(imageUrl)} 
-                alt="Uploaded" 
-                    className="max-w-full max-h-full object-contain"
-                    onError={() => {
-                      setError('이미지를 불러오는 중 오류가 발생했습니다.');
-                      toast.error('이미지를 불러오는 중 오류가 발생했습니다.', {
-                        icon: <AlertCircle className="size-4 text-red-500" />
-                      });
-                    }}
-                  />
-                )}
-              </div> */}
-              
               <div className="grid gap-4">
                 <div className="space-y-1.5">
                   <Label className="flex justify-between">
@@ -322,26 +304,44 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* <div className="space-y-1.5">
+                <div className="space-y-1.5">
                   <Label className="flex justify-between">
                     <span>추적 링크</span>
                   </Label>
+                  <div className="aspect-video bg-muted/30 flex items-center justify-center rounded-lg overflow-hidden border mb-2">
+                    {uploading ? (
+                      <Skeleton className="h-full w-full" />
+                    ) : (
+                      <img 
+                        src={shortUrl || imageUrl} 
+                        alt="Uploaded" 
+                        className="max-w-full max-h-full object-contain"
+                        onError={() => {
+                          setError('이미지를 불러오는 중 오류가 발생했습니다.');
+                          toast.error('이미지를 불러오는 중 오류가 발생했습니다.', {
+                            icon: <AlertCircle className="size-4 text-red-500" />
+                          });
+                        }}
+                      />
+                    )}
+                  </div>
                   <div className="flex">
                     <div className="flex-1 relative">
                       <Input 
-                        value={getExternalTrackingUrl(imageUrl)} 
+                        value={shortUrl || '단축 URL 생성 중...'} 
                         readOnly 
                         className="rounded-r-none pr-10 font-mono text-xs"
                       />
                     </div>
                     <Button 
-                      onClick={() => copyToClipboard(getExternalTrackingUrl(imageUrl), '추적 URL')}
+                      onClick={() => shortUrl && copyToClipboard(shortUrl, '추적 URL')}
                       className="rounded-l-none px-3"
+                      disabled={!shortUrl}
                     >
                       <Copy className="size-4" />
                     </Button>
                   </div>
-                </div> */}
+                </div>
               </div>
             </CardContent>
             

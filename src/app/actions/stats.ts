@@ -47,32 +47,32 @@ export async function getImageStats(): Promise<{ data: ImageStats[] | null; erro
 
     // 각 이미지별로 실제 접근 기록 수를 계산
     const statsPromises = logs.map(async (log) => {
-      const { count, error: countError } = await serviceSupabase
-        .from('image_access_history')
-        .select('*', { count: 'exact', head: true })
-        .eq('image_url', log.image_url)
-        .not('referrer', 'is', null) // 참조 사이트가 있는 경우만
-        .not('ip_address', 'eq', '127.0.0.1') // 로컬 접근 제외
-        .not('ip_address', 'eq', '::1') // 로컬 IPv6 접근 제외
-        .not('ip_address', 'eq', 'unknown') // 알 수 없는 IP 제외
-        .not('referrer', 'ilike', '%img-rust-eight.vercel.app%') // 우리 페이지 접근 제외
-        .not('referrer', 'eq', 'direct'); // 다이렉트 접근 제외
+      // image_access_history가 없는 경우를 위해 기본값 설정
+      let accessCount = 0;
 
-      if (countError) {
-        console.error('Count error:', countError);
-        return {
-          id: log.id,
-          image_url: log.image_url,
-          access_count: 0,
-          created_at: log.created_at,
-          updated_at: log.updated_at
-        };
+      try {
+        const { count, error: countError } = await serviceSupabase
+          .from('image_access_history')
+          .select('*', { count: 'exact', head: true })
+          .eq('image_url', log.image_url)
+          .not('referrer', 'is', null) // 참조 사이트가 있는 경우만
+          .not('ip_address', 'eq', '127.0.0.1') // 로컬 접근 제외
+          .not('ip_address', 'eq', '::1') // 로컬 IPv6 접근 제외
+          .not('ip_address', 'eq', 'unknown') // 알 수 없는 IP 제외
+          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%') // 우리 페이지 접근 제외
+          .not('referrer', 'eq', 'direct'); // 다이렉트 접근 제외
+
+        if (!countError) {
+          accessCount = count || 0;
+        }
+      } catch (error) {
+        console.error('Count error:', error);
       }
 
       return {
         id: log.id,
         image_url: log.image_url,
-        access_count: count || 0,
+        access_count: accessCount,
         created_at: log.created_at,
         updated_at: log.updated_at
       };
