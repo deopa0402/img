@@ -460,46 +460,42 @@ export default function StatsPage() {
                   </Card>
 
                   <Card className="hover:shadow-lg transition-shadow">
-                    <CardHeader className="pb-6">
-                      <CardTitle className="text-xl">상위 참조 사이트</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="max-h-[400px] overflow-y-auto pr-2">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead className="text-lg">사이트</TableHead>
-                              <TableHead className="text-lg text-right">접근 횟수</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {sortedReferrers.map((item, index) => (
-                              <TableRow key={index}>
-                                <TableCell>
-                                  <div className="space-y-1">
-                                    <div className="text-lg font-medium">{item.hostname}</div>
-                                    <div className="text-sm text-gray-500">
-                                      <div className="truncate">{item.baseUrl}</div>
-                                      {item.urls.length > 1 && (
-                                        <div className="text-xs text-gray-400 mt-1">
-                                          외 {item.urls.length - 1}개의 유사 URL
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  <Badge variant="secondary" className="text-lg px-4 py-2">
-                                    {item.count}회
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
+  <CardHeader className="pb-6">
+    <CardTitle className="text-xl">참조 사이트</CardTitle>
+  </CardHeader>
+  <CardContent className="p-0">
+    {/* 스크롤 가능 영역: overflow-y-auto로 세로 스크롤 활성화, 높이 400px 유지 */}
+    <div className="h-[400px] overflow-y-auto">
+      <Table>
+        <TableHeader className="sticky top-0 bg-background z-10">
+          <TableRow>
+            <TableHead className="text-lg">사이트</TableHead>
+            <TableHead className="text-lg text-right">접근 횟수</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sortedReferrers.map((item, index) => (
+            <TableRow key={index}>
+              <TableCell>
+                <div className="space-y-1">
+                  <div className="text-lg font-medium">{item.hostname}</div>
+                  <div className="text-sm text-gray-500 truncate">
+                    {item.baseUrl}
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <Badge variant="secondary" className="text-lg px-4 py-2">
+                  {item.count}회
+                </Badge>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  </CardContent>
+</Card>
                 </div>
               </>
             )}

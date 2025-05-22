@@ -162,7 +162,7 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
             const topReferrers = Object.entries(referrerCounts)
               .map(([referrer, count]) => ({ referrer, count }))
               .sort((a, b) => b.count - a.count)
-              .slice(0, 5);
+              // .slice(0, 5);
               
             return { data: topReferrers, error: null };
           });
