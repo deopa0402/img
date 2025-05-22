@@ -282,32 +282,9 @@ export default function Home() {
             
             <CardContent className="pt-4 space-y-4">
               <div className="grid gap-4">
-                <div className="space-y-1.5">
-                  <Label className="flex justify-between">
-                    <span>단축 링크</span>
-                  </Label>
-                  <div className="flex">
-                    <div className="flex-1 relative">
-                      <Input 
-                        value={shortUrl || '단축 URL 생성 중...'} 
-                        readOnly 
-                        className="rounded-r-none pr-10 font-mono text-xs"
-                      />
-                    </div>
-                    <Button 
-                      onClick={() => shortUrl && copyToClipboard(shortUrl, '단축 URL')}
-                      className="rounded-l-none px-3"
-                      disabled={!shortUrl}
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                  </div>
-                </div>
+             
 
                 <div className="space-y-1.5">
-                  <Label className="flex justify-between">
-                    <span>추적 링크</span>
-                  </Label>
                   <div className="aspect-video bg-muted/30 flex items-center justify-center rounded-lg overflow-hidden border mb-2">
                     {uploading ? (
                       <Skeleton className="h-full w-full" />
