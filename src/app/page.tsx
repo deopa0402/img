@@ -23,7 +23,8 @@ export default function Home() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
+  const [promotionName, setPromotionName] = useState<string>('');
+    
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
@@ -82,6 +83,13 @@ export default function Home() {
       return;
     }
     
+    if (!promotionName) {
+      toast.error('프로모션 명을 입력해주세요', {
+        icon: <AlertCircle className="size-4 text-red-500" />
+      });
+      return;
+    }
+
     setUploading(true);
     setError(null);
 
@@ -135,6 +143,8 @@ export default function Home() {
     }
   };
 
+
+
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-background">
       <div className="max-w-lg mx-auto space-y-6">
@@ -152,21 +162,6 @@ export default function Home() {
                 </Button>
                 
           </Link>
-
-              {/* <Button
-      variant="outline"
-      onClick={() =>
-        toast("딸깍", {
-          description: "딸깍 딸깍",
-          action: {
-            label: "딸깍",
-            onClick: () => console.log("딸깍"),
-          },
-        })
-      }
-    >
-                 딸깍
-              </Button> */}
         </div>
             <CardDescription>
               이미지를 드래그하거나 선택하여 쉽게 업로드하세요
@@ -241,6 +236,14 @@ export default function Home() {
             </div>
           )}
         </div>
+
+        <div className="flex justify-between w-full">
+          <div className="flex flex-col gap-2 w-full">
+            {/* 필수 입력 */}
+            <Label htmlFor="promotionName" className="text-sm font-medium text-muted-foreground ">프로모션 명</Label>
+            <Input className="w-full" name="promotion" type="text" value={promotionName} onChange={(e) => setPromotionName(e.target.value)}/>
+          </div>
+        </div>
               
               <div className="flex gap-2">
                 {fileSelected && !uploading && (
@@ -255,7 +258,7 @@ export default function Home() {
                 )}
                 <Button 
                   type="submit" 
-                  disabled={uploading || !fileSelected}
+                  disabled={uploading || !fileSelected || !promotionName}
                   className="flex-1 h-10"
                 >
                   {uploading ? '처리 중...' : '업로드'}

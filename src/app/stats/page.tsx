@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getImageStats, getImageDetailedStats, type ImageStats, type DetailedStats } from '../actions/stats';
-import { createShortUrlAction } from '@/app/actions';
+import { createShortUrlAction, addPromotionToImage } from '@/app/actions';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,6 +23,12 @@ export default function StatsPage() {
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   // const { toast } = useSonner();
+
+  // 프로모션 추가 모달 관련 상태
+  const [isAddPromotionModalOpen, setIsAddPromotionModalOpen] = useState(false);
+  const [imageForPromotion, setImageForPromotion] = useState<ImageStats | null>(null);
+  const [newPromotionValue, setNewPromotionValue] = useState('');
+  const [isAddingPromotion, setIsAddingPromotion] = useState(false);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -191,7 +197,7 @@ export default function StatsPage() {
   // 상위 참조 사이트 필터링 및 그룹화
   const groupedReferrers = detailedStats?.topReferrers
     .filter(item => item.referrer !== 'direct')
-    .reduce((acc, item) => {
+    .reduce((acc: Record<string, { hostname: string; count: number; urls: Set<string> }>, item) => {
       const { hostname, baseUrl } = parseReferrer(item.referrer);
       if (!acc[baseUrl]) {
         acc[baseUrl] = {
@@ -265,6 +271,7 @@ export default function StatsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead>프로모션 명</TableHead>
                     <TableHead>이미지</TableHead>
                     <TableHead>파일명</TableHead>
                     <TableHead>접근 횟수</TableHead>
@@ -276,6 +283,24 @@ export default function StatsPage() {
                 <TableBody>
                   {stats.map((stat) => (
                     <TableRow key={stat.id}>
+                      <TableCell>
+                        <div className="text-sm text-gray-900">
+                          {stat.promotion ? (
+                            stat.promotion
+                          ) : (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setImageForPromotion(stat);
+                                setIsAddPromotionModalOpen(true);
+                              }}
+                            >
+                              추가
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="w-16 h-16 overflow-hidden rounded-md">
                           {failedImages.has(stat.image_url) ? (
@@ -347,6 +372,48 @@ export default function StatsPage() {
             </CardContent>
           </Card>
         )}
+
+        <Dialog open={isAddPromotionModalOpen} onOpenChange={setIsAddPromotionModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>프로모션 추가</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <label htmlFor="promotion" className="text-right">프로모션 명</label>
+                <input
+                  id="promotion"
+                  value={newPromotionValue}
+                  onChange={(e) => setNewPromotionValue(e.target.value)}
+                  className="col-span-3 border p-2 rounded"
+                  disabled={isAddingPromotion}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setIsAddPromotionModalOpen(false)} disabled={isAddingPromotion}>취소</Button>
+              <Button onClick={async () => {
+                if (imageForPromotion && newPromotionValue.trim()) {
+                  setIsAddingPromotion(true);
+                  const result = await addPromotionToImage(imageForPromotion.image_url, newPromotionValue.trim());
+                  if (result.success) {
+                    toast.success('프로모션이 성공적으로 추가되었습니다.');
+                    setIsAddPromotionModalOpen(false);
+                    setNewPromotionValue('');
+                    // 데이터 새로고침 (revalidatePath는 서버 액션에서 이미 호출됨)
+                    // 클라이언트 상태도 업데이트하거나 전체 데이터를 다시 가져와야 할 수 있음
+                    // 여기서는 간단히 모달 닫고 입력값 초기화
+                  } else {
+                    toast.error(`프로모션 추가 실패: ${result.error}`);
+                  }
+                  setIsAddingPromotion(false);
+                }
+              }} disabled={!newPromotionValue.trim() || isAddingPromotion}>
+                {isAddingPromotion ? '추가 중...' : '추가'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={!!selectedImageUrl} onOpenChange={(open) => !open && setSelectedImageUrl(null)}>
           <DialogContent className="p-8">

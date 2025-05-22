@@ -5,6 +5,7 @@ import { serviceSupabase } from '@/lib/supabase'
 export type ImageStats = {
   id: number
   image_url: string
+  promotion: string
   access_count: number
   created_at: string
   updated_at: string | null
@@ -72,6 +73,7 @@ export async function getImageStats(): Promise<{ data: ImageStats[] | null; erro
       return {
         id: log.id,
         image_url: log.image_url,
+        promotion: log.promotion,
         access_count: accessCount,
         created_at: log.created_at,
         updated_at: log.updated_at
