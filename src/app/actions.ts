@@ -3,6 +3,7 @@
 // 중앙화된 Supabase 클라이언트 사용
 import { supabase, serviceSupabase, getImagePublicUrl } from '@/lib/supabase'
 import { revalidatePath } from 'next/cache'
+import { nanoid } from 'nanoid'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -37,28 +38,27 @@ export async function uploadImage(formData: FormData) {
 // 단축 URL 생성
 export async function createShortUrlAction(imageUrl: string) {
   try {
-    console.log('단축 URL 생성 요청:', {
-      url: `${API_URL}/api/shorten`,
-      imageUrl
-    });
+    console.log('단축 URL 생성 요청:', { imageUrl });
 
-    const response = await fetch(`${API_URL}/api/shorten`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ image_url: imageUrl }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('단축 URL 생성 실패:', error);
-      throw new Error(error.error || '단축 URL 생성 중 오류가 발생했습니다.');
+    if (!imageUrl || !imageUrl.startsWith('https://')) {
+      throw new Error('유효한 image_url이 필요합니다');
     }
 
-    const data = await response.json();
-    console.log('단축 URL 생성 응답:', data);
-    return { short_url: data.short_url };
+    const shortId = nanoid(7);
+    // 서비스 롤을 사용하여 데이터베이스에 저장
+    const { error } = await serviceSupabase
+      .from('shortened_urls')
+      .insert({
+        short_id: shortId,
+        original_url: imageUrl,
+        created_at: new Date().toISOString()
+      });
+
+    if (error) throw error;
+
+    const shortUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/${shortId}`;
+    console.log('단축 URL 생성 응답:', { shortUrl });
+    return { short_url: shortUrl };
   } catch (error) {
     console.error('단축 URL 생성 오류:', error);
     return { error: error instanceof Error ? error.message : '단축 URL 생성 중 오류가 발생했습니다.' };
