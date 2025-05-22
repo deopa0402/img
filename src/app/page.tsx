@@ -135,16 +135,6 @@ export default function Home() {
     }
   };
 
-  // 추적 URL 생성 (이미지 접근 추적용)
-  const getTrackingUrl = (url: string) => {
-    return `${process.env.NEXT_PUBLIC_API_URL}/api/track?image_url=${encodeURIComponent(url)}`;
-  };
-
-  // 외부 추적 URL 생성 (Vercel 호스팅용)
-  const getExternalTrackingUrl = (url: string) => {
-    return `${process.env.NEXT_PUBLIC_API_URL}/api/track?image_url=${encodeURIComponent(url)}`;
-  };
-
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-background">
       <div className="max-w-lg mx-auto space-y-6">
@@ -291,7 +281,7 @@ export default function Home() {
             </CardHeader>
             
             <CardContent className="pt-4 space-y-4">
-              <div className="aspect-video bg-muted/30 flex items-center justify-center rounded-lg overflow-hidden border">
+              {/* <div className="aspect-video bg-muted/30 flex items-center justify-center rounded-lg overflow-hidden border">
                 {uploading ? (
                   <Skeleton className="h-full w-full" />
                 ) : (
@@ -307,7 +297,7 @@ export default function Home() {
                     }}
                   />
                 )}
-              </div>
+              </div> */}
               
               <div className="grid gap-4">
                 <div className="space-y-1.5">

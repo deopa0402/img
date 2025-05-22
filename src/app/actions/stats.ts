@@ -32,25 +32,60 @@ export type DetailedStats = {
 export async function getImageStats(): Promise<{ data: ImageStats[] | null; error: string | null }> {
   try {
     // 서비스 롤을 사용하여 RLS 정책 우회
-    const { data, error } = await serviceSupabase
+    const { data: logs, error: logsError } = await serviceSupabase
       .from('image_access_logs')
       .select('*')
-      .order('access_count', { ascending: false })
+      .order('created_at', { ascending: false });  // 생성일 기준으로 정렬
 
-    if (error) {
-      console.error('Database error:', error)
+    if (logsError) {
+      console.error('Database error:', logsError);
       return { 
         data: null, 
         error: '통계 데이터를 가져오는 중 오류가 발생했습니다.' 
       }
     }
 
+    // 각 이미지별로 실제 접근 기록 수를 계산
+    const statsPromises = logs.map(async (log) => {
+      const { count, error: countError } = await serviceSupabase
+        .from('image_access_history')
+        .select('*', { count: 'exact', head: true })
+        .eq('image_url', log.image_url)
+        .not('referrer', 'is', null) // 참조 사이트가 있는 경우만
+        .not('ip_address', 'eq', '127.0.0.1') // 로컬 접근 제외
+        .not('ip_address', 'eq', '::1') // 로컬 IPv6 접근 제외
+        .not('ip_address', 'eq', 'unknown') // 알 수 없는 IP 제외
+        .not('referrer', 'ilike', '%img-rust-eight.vercel.app%') // 우리 페이지 접근 제외
+        .not('referrer', 'eq', 'direct'); // 다이렉트 접근 제외
+
+      if (countError) {
+        console.error('Count error:', countError);
+        return {
+          id: log.id,
+          image_url: log.image_url,
+          access_count: 0,
+          created_at: log.created_at,
+          updated_at: log.updated_at
+        };
+      }
+
+      return {
+        id: log.id,
+        image_url: log.image_url,
+        access_count: count || 0,
+        created_at: log.created_at,
+        updated_at: log.updated_at
+      };
+    });
+
+    const stats = await Promise.all(statsPromises);
+
     return { 
-      data: data as ImageStats[], 
+      data: stats as ImageStats[], 
       error: null 
     }
   } catch (error) {
-    console.error('Action error:', error)
+    console.error('Action error:', error);
     return { 
       data: null, 
       error: '서버 오류가 발생했습니다.' 
@@ -67,6 +102,10 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
       .select('ip_address')
       .eq('image_url', imageUrl)
       .not('ip_address', 'eq', 'unknown')
+      .not('ip_address', 'eq', '127.0.0.1')
+      .not('ip_address', 'eq', '::1')
+      .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+      .not('referrer', 'eq', 'direct')
       .then((result) => {
         if (result.error) return { data: null, error: result.error };
         // IP 주소 세트 생성하여 중복 제거
@@ -84,6 +123,11 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
       .from('image_access_history')
       .select('accessed_at')
       .eq('image_url', imageUrl)
+      .not('ip_address', 'eq', '127.0.0.1')
+      .not('ip_address', 'eq', '::1')
+      .not('ip_address', 'eq', 'unknown')
+      .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+      .not('referrer', 'eq', 'direct')
       .order('accessed_at', { ascending: false })
       .limit(1)
       .single();
@@ -99,6 +143,11 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
           .from('image_access_history')
           .select('referrer')
           .eq('image_url', imageUrl)
+          .not('ip_address', 'eq', '127.0.0.1')
+          .not('ip_address', 'eq', '::1')
+          .not('ip_address', 'eq', 'unknown')
+          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+          .not('referrer', 'eq', 'direct')
           .then((result2) => {
             if (result2.error) return { data: [], error: result2.error };
             
@@ -126,6 +175,11 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
       .from('image_access_history')
       .select('id, image_url, ip_address, user_agent, referrer, accessed_at')
       .eq('image_url', imageUrl)
+      .not('ip_address', 'eq', '127.0.0.1')
+      .not('ip_address', 'eq', '::1')
+      .not('ip_address', 'eq', 'unknown')
+      .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+      .not('referrer', 'eq', 'direct')
       .order('accessed_at', { ascending: false })
       .limit(10);
 
@@ -140,6 +194,11 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
           .from('image_access_history')
           .select('accessed_at')
           .eq('image_url', imageUrl)
+          .not('ip_address', 'eq', '127.0.0.1')
+          .not('ip_address', 'eq', '::1')
+          .not('ip_address', 'eq', 'unknown')
+          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+          .not('referrer', 'eq', 'direct')
           .then((result2) => {
             if (result2.error) return { data: [], error: result2.error };
             
@@ -173,6 +232,11 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
           .from('image_access_history')
           .select('accessed_at')
           .eq('image_url', imageUrl)
+          .not('ip_address', 'eq', '127.0.0.1')
+          .not('ip_address', 'eq', '::1')
+          .not('ip_address', 'eq', 'unknown')
+          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
+          .not('referrer', 'eq', 'direct')
           .gte('accessed_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
           .then((result2) => {
             if (result2.error) return { data: [], error: result2.error };
@@ -208,7 +272,7 @@ export async function getImageDetailedStats(imageUrl: string): Promise<{ data: D
     return { 
       data: detailedStats,
       error: null 
-    };
+    }
   } catch (error) {
     console.error('Detailed stats error:', error);
     return { 

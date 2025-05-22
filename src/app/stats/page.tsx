@@ -32,7 +32,7 @@ export default function StatsPage() {
         if (result.error) {
           setError(result.error);
         } else if (result.data) {
-          // 최신순으로 정렬
+          // 최신순으로 정렬 (조회수와 관계없이)
           const sortedStats = result.data.sort((a, b) => 
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           );
