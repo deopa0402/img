@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, ChangeEvent } from 'react';
-import { uploadImage } from '@/app/actions';
+import { uploadImage, createShortUrlAction } from '@/app/actions';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,20 +63,11 @@ export default function Home() {
   // 단축 URL 생성
   const createShortUrl = async (url: string) => {
     try {
-      const response = await fetch('/api/shorten', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ image_url: url })
-      });
-      
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.error);
+      const result = await createShortUrlAction(url);
+      if (result.error) {
+        throw new Error(result.error);
       }
-      
-      return data.short_url;
+      return result.short_url;
     } catch (err) {
       console.error('단축 URL 생성 실패:', err);
       return null;
@@ -95,7 +86,6 @@ export default function Home() {
     setError(null);
 
     try {
-      // 서버 액션 호출
       const result = await uploadImage(formData);
       
       if (result.error) {
@@ -147,12 +137,12 @@ export default function Home() {
 
   // 추적 URL 생성 (이미지 접근 추적용)
   const getTrackingUrl = (url: string) => {
-    return `/api/track-image?image_url=${encodeURIComponent(url)}`;
+    return `${process.env.NEXT_PUBLIC_API_URL}/api/track?image_url=${encodeURIComponent(url)}`;
   };
 
   // 외부 추적 URL 생성 (Vercel 호스팅용)
   const getExternalTrackingUrl = (url: string) => {
-    return `https://img-rust-eight.vercel.app/api/track-image?image_url=${encodeURIComponent(url)}`;
+    return `${process.env.NEXT_PUBLIC_API_URL}/api/track?image_url=${encodeURIComponent(url)}`;
   };
 
   return (
