@@ -63,7 +63,7 @@ export async function createShortUrlAction(imageUrl: string) {
     if (!imageUrl || !imageUrl.startsWith('https://')) {
       throw new Error('유효한 image_url이 필요합니다');
     }
-console.log('!!!!!!!!!!!!!!imageUrl', imageUrl)
+console.log('imageUrl', imageUrl)
     // 1. 기존 단축 URL 조회
     // 동일한 URL에 대해 여러 단축 URL이 있을 수 있으므로 limit(1)을 사용
     const { data: existingShortUrl, error: fetchError } = await serviceSupabase
@@ -84,9 +84,31 @@ console.log('!!!!!!!!!!!!!!imageUrl', imageUrl)
       console.log('기존 단축 URL 반환:', { shortUrl });
       return { short_url: shortUrl };
     } else {
-      // 3. 기존 단축 URL이 없다면 없다고 알림 (새로 생성하지 않음)
-      console.log('해당 image_url에 대한 단축 URL을 찾을 수 없습니다.', { imageUrl });
-      return { short_url: null, error: '해당 이미지의 단축 URL이 존재하지 않습니다.' };
+      // 3. 기존 단축 URL이 없다면 새로 생성
+      console.log('해당 image_url에 대한 단축 URL이 없어 새로 생성합니다.', { imageUrl });
+      
+      // 새 short_id 생성
+      const shortId = nanoid(8); // 8자리 길이의 ID 생성
+
+      // 데이터베이스에 새 단축 URL 삽입
+      const { data: newShortUrl, error: insertError } = await serviceSupabase
+        .from('shortened_urls')
+        .insert({
+          original_url: imageUrl,
+          short_id: shortId,
+        })
+        .select('short_id')
+        .single(); // 단일 결과 반환
+
+      if (insertError) {
+        console.error('새 단축 URL 삽입 오류:', insertError);
+        throw new Error(`단축 URL 생성 실패: ${insertError.message}`);
+      }
+      
+      // 새로 생성된 단축 URL 반환
+      const shortUrl = `${process.env.NEXT_PUBLIC_API_URL}/api/${newShortUrl.short_id}`;
+      console.log('새 단축 URL 생성 및 반환:', { shortUrl });
+      return { short_url: shortUrl };
     }
 
   } catch (error) {
