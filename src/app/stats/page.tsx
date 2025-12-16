@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { getImageStats, getImageDetailedStats, type ImageStats, type DetailedStats } from '../actions/stats';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { getImageStats, getImageDetailedStats, refreshMaterializedView, type ImageStats, type DetailedStats } from '../actions/stats';
 import { createShortUrlAction, addPromotionToImage } from '@/app/actions';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,10 +11,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis } from "@/components/ui/pagination";
 import { toast } from 'sonner';
 import { Copy, ExternalLink, BarChart2, Calendar, Users, Clock, RefreshCw } from 'lucide-react';
 
 export default function StatsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [stats, setStats] = useState<ImageStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +27,16 @@ export default function StatsPage() {
   const [detailedStats, setDetailedStats] = useState<DetailedStats | null>(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
-  // const { toast } = useSonner();
+
+  // 🆕 페이지네이션 상태 (URL에서 초기값 읽기)
+  const [currentPage, setCurrentPage] = useState(() => {
+    const page = Number(searchParams.get('page') || '1');
+    return Math.max(1, page);
+  });
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [limit, setLimit] = useState(50);
+  const [refreshing, setRefreshing] = useState(false);
 
   // 프로모션 추가 모달 관련 상태
   const [isAddPromotionModalOpen, setIsAddPromotionModalOpen] = useState(false);
@@ -30,19 +44,31 @@ export default function StatsPage() {
   const [newPromotionValue, setNewPromotionValue] = useState('');
   const [isAddingPromotion, setIsAddingPromotion] = useState(false);
 
+  // 🆕 URL 변경 감지 (뒤로가기/앞으로가기 지원)
+  useEffect(() => {
+    const page = Number(searchParams.get('page') || '1');
+    setCurrentPage(Math.max(1, page));
+  }, [searchParams]);
+
+  // 🆕 페이지 변경 핸들러 (URL 동기화)
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    router.push(`/stats?page=${page}`, { scroll: false }); // 스크롤 위치 유지
+  };
+
+  // 🆕 통계 데이터 페칭 (페이지네이션 적용)
   useEffect(() => {
     const fetchStats = async () => {
+      setLoading(true);
       try {
-        const result = await getImageStats();
-        
+        const result = await getImageStats(currentPage, limit);
+
         if (result.error) {
           setError(result.error);
         } else if (result.data) {
-          // 최신순으로 정렬 (조회수와 관계없이)
-          const sortedStats = result.data.sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          );
-          setStats(sortedStats);
+          setStats(result.data);
+          setTotalPages(result.pagination?.totalPages || 1);
+          setTotal(result.pagination?.total || 0);
         }
       } catch (err) {
         console.error('통계 데이터 로드 오류:', err);
@@ -53,7 +79,7 @@ export default function StatsPage() {
     };
 
     fetchStats();
-  }, []);
+  }, [currentPage, limit]); // 페이지 또는 limit 변경 시 재조회
 
   // 상세 통계 로드
   useEffect(() => {
@@ -67,7 +93,7 @@ export default function StatsPage() {
       setDetailsError(null);
       try {
         const result = await getImageDetailedStats(selectedImageUrl);
-        
+
         if (result.error) {
           setDetailsError(result.error);
         } else if (result.data) {
@@ -83,6 +109,48 @@ export default function StatsPage() {
 
     fetchDetailedStats();
   }, [selectedImageUrl]);
+
+  // 🆕 키보드 네비게이션 (URL 동기화 적용)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      // 입력 필드나 모달이 열려있을 때는 작동 안 함
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement ||
+        isAddPromotionModalOpen ||
+        selectedImageUrl !== null
+      ) {
+        return;
+      }
+
+      switch(e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (currentPage > 1) {
+            handlePageChange(currentPage - 1);
+          }
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (currentPage < totalPages) {
+            handlePageChange(currentPage + 1);
+          }
+          break;
+        case 'Home':
+          e.preventDefault();
+          handlePageChange(1);
+          break;
+        case 'End':
+          e.preventDefault();
+          handlePageChange(totalPages);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [currentPage, totalPages, isAddPromotionModalOpen, selectedImageUrl]);
 
   // 이미지 로드 실패 처리
   const handleImageError = (imageUrl: string) => {
@@ -178,6 +246,29 @@ export default function StatsPage() {
     }
   };
 
+  // 🆕 수동 갱신 함수
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const result = await refreshMaterializedView();
+      if (result.success) {
+        toast.success('통계가 갱신되었습니다');
+        // 현재 페이지 데이터 다시 로드
+        const statsResult = await getImageStats(currentPage, limit);
+        if (statsResult.data) {
+          setStats(statsResult.data);
+        }
+      } else {
+        toast.error(result.error || '갱신 실패');
+      }
+    } catch (error) {
+      console.error('갱신 오류:', error);
+      toast.error('갱신 중 오류가 발생했습니다');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   // 리퍼러 간소화 및 URL 파싱
   const parseReferrer = (referrer: string) => {
     if (referrer === 'direct') return { hostname: '직접 접속', fullUrl: '' };
@@ -232,12 +323,50 @@ export default function StatsPage() {
 
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-gray-50">
-      <div className="max-w-7xl mx-auto space-y-8">
-        <div className="flex justify-between items-center">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">이미지 접근 통계</h1>
-          <Button asChild>
-            <Link href="/">홈으로</Link>
-          </Button>
+      <div className="mx-auto space-y-8">
+        <div className="flex flex-col gap-4">
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">이미지 접근 통계</h1>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={handleRefresh}
+                disabled={refreshing}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+                갱신
+              </Button>
+              <Button asChild>
+                <Link href="/">홈으로</Link>
+              </Button>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="text-sm text-gray-600">
+              총 <span className="font-semibold text-gray-900">{total}</span>개 이미지 |{' '}
+              <span className="font-semibold text-gray-900">
+                {(currentPage - 1) * limit + 1}-{Math.min(currentPage * limit, total)}
+              </span>개 표시 중
+            </div>
+            <div className="flex items-center gap-2">
+              <label htmlFor="limit-select" className="text-sm text-gray-600">
+                페이지당:
+              </label>
+              <select
+                id="limit-select"
+                value={limit}
+                onChange={(e) => {
+                  setLimit(Number(e.target.value));
+                  handlePageChange(1); // 페이지를 1로 리셋 (URL도 업데이트)
+                }}
+                className="border border-gray-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value={25}>25개씩</option>
+                <option value={50}>50개씩</option>
+                <option value={100}>100개씩</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         {loading && (
@@ -275,8 +404,9 @@ export default function StatsPage() {
                     <TableHead>이미지</TableHead>
                     <TableHead>파일명</TableHead>
                     <TableHead>접근 횟수</TableHead>
+                    <TableHead>고유 IP</TableHead>
+                    <TableHead>최근 접근</TableHead>
                     <TableHead>생성일</TableHead>
-                    <TableHead>마지막 접근</TableHead>
                     <TableHead>액션</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -338,12 +468,17 @@ export default function StatsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <div className="text-sm text-gray-900">{formatDate(stat.created_at)}</div>
+                        <Badge variant="outline" className="font-medium">
+                          {stat.unique_ips}명
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         <div className="text-sm text-gray-900">
-                          {stat.updated_at ? formatDate(stat.updated_at) : '-'}
+                          {stat.last_accessed ? formatDate(stat.last_accessed) : '-'}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm text-gray-900">{formatDate(stat.created_at)}</div>
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-2">
@@ -371,6 +506,81 @@ export default function StatsPage() {
               </Table>
             </CardContent>
           </Card>
+        )}
+
+        {/* 🆕 컴팩트 입력 모드 페이지네이션 */}
+        {stats.length > 0 && totalPages > 1 && (
+          <div className="flex flex-col items-center gap-4">
+            <Pagination>
+              <PaginationContent className="gap-2">
+                {/* 처음 버튼 */}
+                <PaginationItem>
+                  <button
+                    onClick={() => handlePageChange(1)}
+                    disabled={currentPage === 1}
+                    className="h-10 px-4 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+                  >
+                    « 처음
+                  </button>
+                </PaginationItem>
+
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={() => currentPage > 1 && handlePageChange(currentPage - 1)}
+                    className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+
+                {/* 페이지 입력 영역 */}
+                <div className="flex items-center gap-2 px-4">
+                  <span className="text-sm text-gray-600">페이지</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max={totalPages}
+                    value={currentPage}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value, 10);
+                      if (!isNaN(value) && value >= 1 && value <= totalPages) {
+                        handlePageChange(value);
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const value = parseInt(e.currentTarget.value, 10);
+                        if (!isNaN(value) && value >= 1 && value <= totalPages) {
+                          handlePageChange(value);
+                        }
+                      }
+                    }}
+                    className="w-16 h-10 px-2 text-center border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="text-sm text-gray-600">/ {totalPages}</span>
+                </div>
+
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={() => currentPage < totalPages && handlePageChange(currentPage + 1)}
+                    className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                  />
+                </PaginationItem>
+
+                {/* 마지막 버튼 */}
+                <PaginationItem>
+                  <button
+                    onClick={() => handlePageChange(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="h-10 px-4 inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50 cursor-pointer"
+                  >
+                    마지막 »
+                  </button>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+            <p className="text-sm text-gray-600">
+              총 {total}개 이미지
+            </p>
+          </div>
         )}
 
         <Dialog open={isAddPromotionModalOpen} onOpenChange={setIsAddPromotionModalOpen}>

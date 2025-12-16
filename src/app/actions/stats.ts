@@ -1,14 +1,28 @@
 'use server'
 
 import { serviceSupabase } from '@/lib/supabase'
+import { unstable_cache } from 'next/cache'
 
 export type ImageStats = {
   id: number
   image_url: string
   promotion: string
   access_count: number
+  unique_ips: number
+  last_accessed: string | null
   created_at: string
   updated_at: string | null
+}
+
+export type PaginatedResponse<T> = {
+  data: T[] | null
+  error: string | null
+  pagination?: {
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+  }
 }
 
 export type ImageAccessDetail = {
@@ -29,257 +43,131 @@ export type DetailedStats = {
   dailyAccess: { date: string; count: number }[]
 }
 
-// 기본 이미지 통계 가져오기
-export async function getImageStats(): Promise<{ data: ImageStats[] | null; error: string | null }> {
+// ========================================
+// ✅ 최적화된 기본 통계 (Materialized View 사용)
+// ========================================
+export async function getImageStats(
+  page: number = 1,
+  limit: number = 50
+): Promise<PaginatedResponse<ImageStats>> {
   try {
-    // 서비스 롤을 사용하여 RLS 정책 우회
-    const { data: logs, error: logsError } = await serviceSupabase
-      .from('image_access_logs')
-      .select('*')
-      .order('created_at', { ascending: false });  // 생성일 기준으로 정렬
+    const offset = (page - 1) * limit;
 
-    if (logsError) {
-      console.error('Database error:', logsError);
-      return { 
-        data: null, 
-        error: '통계 데이터를 가져오는 중 오류가 발생했습니다.' 
-      }
-    }
+    // ✅ 단 1번의 쿼리로 모든 데이터 조회 (N+1 문제 해결)
+    const { data, error, count } = await serviceSupabase
+      .from('image_stats_summary')  // Materialized View 사용
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-    // 각 이미지별로 실제 접근 기록 수를 계산
-    const statsPromises = logs.map(async (log) => {
-      // image_access_history가 없는 경우를 위해 기본값 설정
-      let accessCount = 0;
-
-      try {
-        const { count, error: countError } = await serviceSupabase
-          .from('image_access_history')
-          .select('*', { count: 'exact', head: true })
-          .eq('image_url', log.image_url)
-          .not('referrer', 'is', null) // 참조 사이트가 있는 경우만
-          .not('ip_address', 'eq', '127.0.0.1') // 로컬 접근 제외
-          .not('ip_address', 'eq', '::1') // 로컬 IPv6 접근 제외
-          .not('ip_address', 'eq', 'unknown') // 알 수 없는 IP 제외
-          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%') // 우리 페이지 접근 제외
-          .not('referrer', 'eq', 'direct'); // 다이렉트 접근 제외
-
-        if (!countError) {
-          accessCount = count || 0;
-        }
-      } catch (error) {
-        console.error('Count error:', error);
-      }
-
+    if (error) {
+      console.error('Database error:', error);
       return {
-        id: log.id,
-        image_url: log.image_url,
-        promotion: log.promotion,
-        access_count: accessCount,
-        created_at: log.created_at,
-        updated_at: log.updated_at
+        data: null,
+        error: '통계 데이터를 가져오는 중 오류가 발생했습니다.'
       };
-    });
-
-    const stats = await Promise.all(statsPromises);
-
-    return { 
-      data: stats as ImageStats[], 
-      error: null 
     }
+
+    return {
+      data: data as ImageStats[],
+      error: null,
+      pagination: {
+        total: count || 0,
+        page,
+        limit,
+        totalPages: Math.ceil((count || 0) / limit)
+      }
+    };
   } catch (error) {
     console.error('Action error:', error);
-    return { 
-      data: null, 
-      error: '서버 오류가 발생했습니다.' 
-    }
+    return {
+      data: null,
+      error: '서버 오류가 발생했습니다.'
+    };
   }
 }
 
-// 특정 이미지의 상세 통계 가져오기
-export async function getImageDetailedStats(imageUrl: string): Promise<{ data: DetailedStats | null; error: string | null }> {
+// ========================================
+// ✅ 캐시된 통계 (60초간 캐시)
+// ========================================
+export const getCachedImageStats = unstable_cache(
+  async (page: number, limit: number) => getImageStats(page, limit),
+  ['image-stats'],
+  {
+    revalidate: 60,  // 60초마다 갱신
+    tags: ['stats']
+  }
+);
+
+// ========================================
+// ✅ 최적화된 상세 통계 (RPC 사용)
+// ========================================
+export async function getImageDetailedStats(
+  imageUrl: string
+): Promise<{ data: DetailedStats | null; error: string | null }> {
   try {
-    // 1. 유니크 IP 개수
-    const { data: uniqueIPData, error: uniqueIPError } = await serviceSupabase
-      .from('image_access_history')
-      .select('ip_address')
-      .eq('image_url', imageUrl)
-      .not('ip_address', 'eq', 'unknown')
-      .not('ip_address', 'eq', '127.0.0.1')
-      .not('ip_address', 'eq', '::1')
-      .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
-      .not('referrer', 'eq', 'direct')
-      .then((result) => {
-        if (result.error) return { data: null, error: result.error };
-        // IP 주소 세트 생성하여 중복 제거
-        const uniqueIPs = new Set(result.data.map(item => item.ip_address));
-        return { data: uniqueIPs.size, error: null };
+    // ✅ 1. RPC 함수로 집계 데이터 한 번에 가져오기 (6개 쿼리 → 1개로 축소)
+    const { data: aggregated, error: aggError } = await serviceSupabase
+      .rpc('get_image_detailed_stats_optimized', {
+        p_image_url: imageUrl
       });
 
-    if (uniqueIPError) {
-      console.error('Unique IP error:', uniqueIPError);
-      return { data: null, error: '상세 통계를 가져오는 중 오류가 발생했습니다.' };
+    if (aggError) {
+      console.error('RPC error:', aggError);
+      return {
+        data: null,
+        error: '상세 통계를 가져오는 중 오류가 발생했습니다.'
+      };
     }
 
-    // 2. 가장 최근 접근 시간
-    const { data: lastAccessData, error: lastAccessError } = await serviceSupabase
-      .from('image_access_history')
-      .select('accessed_at')
-      .eq('image_url', imageUrl)
-      .not('ip_address', 'eq', '127.0.0.1')
-      .not('ip_address', 'eq', '::1')
-      .not('ip_address', 'eq', 'unknown')
-      .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
-      .not('referrer', 'eq', 'direct')
-      .order('accessed_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    // 3. 가장 많이 접근한 리퍼러 상위 5개
-    const { data: referrerData, error: referrerError } = await serviceSupabase.rpc(
-      'get_top_referrers',
-      { image_url_param: imageUrl, limit_param: 5 }
-    ).then((result) => {
-      if (result.error) {
-        // RPC 함수가 없을 경우 수동으로 집계
-        return serviceSupabase
-          .from('image_access_history')
-          .select('referrer')
-          .eq('image_url', imageUrl)
-          .not('ip_address', 'eq', '127.0.0.1')
-          .not('ip_address', 'eq', '::1')
-          .not('ip_address', 'eq', 'unknown')
-          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
-          .not('referrer', 'eq', 'direct')
-          .then((result2) => {
-            if (result2.error) return { data: [], error: result2.error };
-            
-            // 수동으로 리퍼러 집계
-            const referrerCounts: Record<string, number> = {};
-            result2.data.forEach(item => {
-              const ref = item.referrer || 'direct';
-              referrerCounts[ref] = (referrerCounts[ref] || 0) + 1;
-            });
-            
-            // 상위 5개 리퍼러 추출
-            const topReferrers = Object.entries(referrerCounts)
-              .map(([referrer, count]) => ({ referrer, count }))
-              .sort((a, b) => b.count - a.count)
-              // .slice(0, 5);
-              
-            return { data: topReferrers, error: null };
-          });
-      }
-      return { data: result.data, error: null };
-    });
-
-    // 4. 최근 접근 기록 10개
-    const { data: recentData, error: recentError } = await serviceSupabase
+    // ✅ 2. 최근 접근 기록만 별도 조회 (가벼움)
+    const { data: recentData } = await serviceSupabase
       .from('image_access_history')
       .select('id, image_url, ip_address, user_agent, referrer, accessed_at')
       .eq('image_url', imageUrl)
-      .not('ip_address', 'eq', '127.0.0.1')
-      .not('ip_address', 'eq', '::1')
-      .not('ip_address', 'eq', 'unknown')
+      .not('ip_address', 'in', '("127.0.0.1","::1","unknown")')
       .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
       .not('referrer', 'eq', 'direct')
       .order('accessed_at', { ascending: false })
       .limit(10);
 
-    // 5. 시간대별 접근 통계
-    const { data: timeData, error: timeError } = await serviceSupabase.rpc(
-      'get_access_by_hour',
-      { image_url_param: imageUrl }
-    ).then((result) => {
-      if (result.error) {
-        // RPC 함수가 없을 경우 수동으로 집계
-        return serviceSupabase
-          .from('image_access_history')
-          .select('accessed_at')
-          .eq('image_url', imageUrl)
-          .not('ip_address', 'eq', '127.0.0.1')
-          .not('ip_address', 'eq', '::1')
-          .not('ip_address', 'eq', 'unknown')
-          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
-          .not('referrer', 'eq', 'direct')
-          .then((result2) => {
-            if (result2.error) return { data: [], error: result2.error };
-            
-            // 수동으로 시간대별 집계
-            const hourCounts: Record<number, number> = {};
-            result2.data.forEach(item => {
-              const hour = new Date(item.accessed_at).getHours();
-              hourCounts[hour] = (hourCounts[hour] || 0) + 1;
-            });
-            
-            // 시간대별 데이터 형식화
-            const hourlyData = Array.from({ length: 24 }, (_, i) => ({
-              hour: i,
-              count: hourCounts[i] || 0
-            }));
-              
-            return { data: hourlyData, error: null };
-          });
-      }
-      return { data: result.data, error: null };
-    });
-
-    // 6. 일별 접근 통계 (최근 7일)
-    const { data: dailyData, error: dailyError } = await serviceSupabase.rpc(
-      'get_daily_access',
-      { image_url_param: imageUrl, days_param: 7 }
-    ).then((result) => {
-      if (result.error) {
-        // RPC 함수가 없을 경우 수동으로 집계
-        return serviceSupabase
-          .from('image_access_history')
-          .select('accessed_at')
-          .eq('image_url', imageUrl)
-          .not('ip_address', 'eq', '127.0.0.1')
-          .not('ip_address', 'eq', '::1')
-          .not('ip_address', 'eq', 'unknown')
-          .not('referrer', 'ilike', '%img-rust-eight.vercel.app%')
-          .not('referrer', 'eq', 'direct')
-          .gte('accessed_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
-          .then((result2) => {
-            if (result2.error) return { data: [], error: result2.error };
-            
-            // 수동으로 일별 집계
-            const dailyCounts: Record<string, number> = {};
-            result2.data.forEach(item => {
-              const date = new Date(item.accessed_at).toISOString().split('T')[0];
-              dailyCounts[date] = (dailyCounts[date] || 0) + 1;
-            });
-            
-            // 일별 데이터 형식화
-            const dailyData = Object.entries(dailyCounts)
-              .map(([date, count]) => ({ date, count }))
-              .sort((a, b) => a.date.localeCompare(b.date));
-              
-            return { data: dailyData, error: null };
-          });
-      }
-      return { data: result.data, error: null };
-    });
-
-    // 모든 데이터 결합
     const detailedStats: DetailedStats = {
-      uniqueIPs: uniqueIPData || 0,
-      lastAccessed: lastAccessData?.accessed_at || null,
-      topReferrers: referrerData || [],
+      uniqueIPs: aggregated?.unique_ips || 0,
+      lastAccessed: aggregated?.last_accessed || null,
+      topReferrers: aggregated?.top_referrers || [],
       recentAccesses: recentData || [],
-      accessByTime: timeData || [],
-      dailyAccess: dailyData || []
+      accessByTime: aggregated?.access_by_hour || [],
+      dailyAccess: aggregated?.daily_access || []
     };
 
-    return { 
+    return {
       data: detailedStats,
-      error: null 
-    }
+      error: null
+    };
   } catch (error) {
     console.error('Detailed stats error:', error);
-    return { 
-      data: null, 
-      error: '상세 통계를 가져오는 중 오류가 발생했습니다.' 
+    return {
+      data: null,
+      error: '상세 통계를 가져오는 중 오류가 발생했습니다.'
+    };
+  }
+}
+
+// ========================================
+// 🔄 수동 캐시 갱신 (관리자용)
+// ========================================
+export async function refreshMaterializedView() {
+  try {
+    const { error } = await serviceSupabase.rpc('refresh_image_stats_summary');
+
+    if (error) throw error;
+
+    return { success: true, message: '통계가 갱신되었습니다.' };
+  } catch (error) {
+    console.error('Refresh error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : '갱신 중 오류가 발생했습니다.'
     };
   }
 } 
