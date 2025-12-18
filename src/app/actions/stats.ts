@@ -48,15 +48,23 @@ export type DetailedStats = {
 // ========================================
 export async function getImageStats(
   page: number = 1,
-  limit: number = 50
+  limit: number = 50,
+  searchQuery: string = ''
 ): Promise<PaginatedResponse<ImageStats>> {
   try {
     const offset = (page - 1) * limit;
 
     // ✅ 단 1번의 쿼리로 모든 데이터 조회 (N+1 문제 해결)
-    const { data, error, count } = await serviceSupabase
+    let query = serviceSupabase
       .from('image_stats_summary')  // Materialized View 사용
-      .select('*', { count: 'exact' })
+      .select('*', { count: 'exact' });
+
+    // 🔍 검색어가 있으면 프로모션 명으로 필터링
+    if (searchQuery.trim()) {
+      query = query.ilike('promotion', `%${searchQuery.trim()}%`);
+    }
+
+    const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
